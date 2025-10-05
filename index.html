@@ -791,14 +791,10 @@ Por favor, me entregue o texto pronto para que eu possa salvar em um arquivo .cs
                     <select id="delegation-collaborator-select" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg"></select>
                 </div>
                 <div>
-                    <label for="delegation-collaborator-email" class="block text-sm font-medium text-gray-700">E-mail do Colaborador para Envio</label>
-                    <input type="email" id="delegation-collaborator-email" placeholder="email.colaborador@exemplo.com" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg">
-                </div>
-                <div>
-                    <button id="send-delegation-link-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Gerar e Enviar Link por E-mail</button>
+                    <button id="generate-delegation-link-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Gerar Link de Finalização</button>
                 </div>
                 <div class="hidden" id="generated-link-container">
-                    <label class="block text-sm font-medium text-gray-700">Link Gerado (copie se o e-mail falhar):</label>
+                    <label class="block text-sm font-medium text-gray-700">Link Gerado:</label>
                     <div class="flex gap-2 mt-1">
                         <textarea id="generated-link-text" rows="3" class="w-full p-2 border border-gray-300 rounded-lg bg-gray-50" readonly></textarea>
                         <button id="copy-delegation-link-btn" class="bg-gray-200 text-gray-800 font-bold p-3 rounded-lg hover:bg-gray-300">Copiar</button>
@@ -807,7 +803,7 @@ Por favor, me entregue o texto pronto para que eu possa salvar em um arquivo .cs
             </div>
 
             <div class="flex justify-end space-x-4 mt-6">
-                <button id="cancel-delegation-btn" class="bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg hover:bg-gray-400">Cancelar</button>
+                <button id="cancel-delegation-btn" class="bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg hover:bg-gray-400">Fechar</button>
             </div>
         </div>
     </div>
@@ -815,7 +811,6 @@ Por favor, me entregue o texto pronto para que eu possa salvar em um arquivo .cs
 
     <!-- Scripts -->
     <script type="module" src="./js/main.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
     <script src="./js/notes.js"></script>
 
 </body>
