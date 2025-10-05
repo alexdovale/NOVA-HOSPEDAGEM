@@ -15,7 +15,7 @@ let unsubscribeFromCollaborators = () => {};
 
 const loadingContainer = document.getElementById('loading-container');
 const loginContainer = document.getElementById('login-container');
-const pautaSelectionContainer = document.getElementById('pauta-selection-container');
+const pautaSelectionContainer = document.getElementById('pautaSelection-container');
 const appContainer = document.getElementById('app-container');
 const loadingText = document.getElementById('loading-text');
 
