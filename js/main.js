@@ -571,10 +571,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showPautaSelectionScreen(auth.currentUser.uid);
     });
 
-    document.getElementById('delegation-collaborator-select').addEventListener('change', (e) => {
-        document.getElementById('delegation-collaborator-email').value = e.target.value;
-    });
-
     document.body.addEventListener('click', async (e) => {
         const button = e.target.closest('button');
         if (!button) return;
@@ -620,8 +616,6 @@ document.addEventListener('DOMContentLoaded', () => {
             switchTab(currentMode);
         }
         
-        // ... (outros listeners de botões como 'confirm-arrival-btn', etc)
-
         if (button.classList.contains('toggle-details-btn')) {
             const details = button.closest('.relative').querySelector('.card-details');
             const icon = button.querySelector('svg');
@@ -647,36 +641,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-         if (button.id === 'send-delegation-link-btn') {
-            const collaboratorName = document.getElementById('delegation-collaborator-select').selectedOptions[0].text;
-            const collaboratorEmail = document.getElementById('delegation-collaborator-email').value;
-            if (!collaboratorEmail) return showNotification("Selecione um colaborador ou insira um e-mail.", "error");
+        if (button.id === 'generate-delegation-link-btn') {
+            const select = document.getElementById('delegation-collaborator-select');
+            if (!select.value) return showNotification("Por favor, selecione um colaborador.", "error");
+            
+            const collaboratorName = select.selectedOptions[0].text;
 
             const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
             const url = `${baseUrl}atendimento_externo.html?pautaId=${currentPautaId}&assistidoId=${assistedIdToHandle}&collaboratorName=${encodeURIComponent(collaboratorName)}`;
 
             document.getElementById('generated-link-text').value = url;
             document.getElementById('generated-link-container').classList.remove('hidden');
-
-            // ATENÇÃO: Substitua pelos seus IDs do EmailJS
-            const serviceID = 'default_service';
-            const templateID = 'template_z26i5gq';
-
-            button.disabled = true;
-            button.textContent = 'Enviando...';
             
-            emailjs.send(serviceID, templateID, {
-                to_email: collaboratorEmail,
-                pauta_name: currentPautaData.name,
-                assistido_name: document.getElementById('delegation-assisted-name').textContent,
-                link: url
-            }).then(() => {
-                showNotification('E-mail enviado com sucesso!', 'success');
-                button.textContent = 'E-mail Enviado';
-            }, (err) => {
-                showNotification('Falha ao enviar e-mail. Copie o link manualmente.', 'error');
-                console.error('EmailJS error:', err);
-                button.textContent = 'Falha no Envio';
+            navigator.clipboard.writeText(url).then(() => {
+                showNotification('Link copiado para a área de transferência!', 'success');
+            }, () => {
+                showNotification('Não foi possível copiar o link automaticamente.', 'error');
             });
         }
         
@@ -688,8 +668,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (button.id === 'cancel-delegation-btn') {
             document.getElementById('delegation-modal').classList.add('hidden');
             document.getElementById('generated-link-container').classList.add('hidden');
-            document.getElementById('send-delegation-link-btn').disabled = false;
-            document.getElementById('send-delegation-link-btn').textContent = 'Gerar e Enviar Link por E-mail';
         }
 
     });
