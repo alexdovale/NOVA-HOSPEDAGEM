@@ -270,7 +270,7 @@
                     <div class="p-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
                         <div class="flex justify-between items-center mb-3">
                              <h3 class="text-xl font-semibold text-gray-800 flex justify-between items-center w-full">
-                                 <span>✅ Atendidos</span>
+                                 <span>📝 Registros de Atendimento</span>
                                  <span id="atendidos-count" class="text-base font-normal bg-gray-200 text-gray-700 px-2 rounded-full"></span>
                              </h3>
                             <button id="download-pdf-btn" class="ml-4 flex-shrink-0 bg-blue-600 text-white font-bold py-1 px-3 rounded-lg hover:bg-blue-700 text-sm">Baixar PDF</button>
@@ -704,6 +704,10 @@ Por favor, me entregue o texto pronto para que eu possa salvar em um arquivo .cs
                                 <label for="collaborator-name" class="block text-sm font-medium text-gray-700">Nome do Colaborador:</label>
                                 <input type="text" id="collaborator-name" name="nome" required class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
                             </div>
+                             <div>
+                                <label for="collaborator-email" class="block text-sm font-medium text-gray-700">E-mail do Colaborador:</label>
+                                <input type="email" id="collaborator-email" name="email" required placeholder="email@exemplo.com" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                            </div>
                             <div>
                                 <label for="collaborator-phone" class="block text-sm font-medium text-gray-700">Telefone (com DDD):</label>
                                 <input type="tel" id="collaborator-phone" name="telefone" placeholder="Ex: 21999998888" required class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
@@ -775,8 +779,41 @@ Por favor, me entregue o texto pronto para que eu possa salvar em um arquivo .cs
       </div>
     </div>
 
+    <!-- NOVO MODAL DE DELEGAÇÃO -->
+    <div id="delegation-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-lg">
+            <h2 class="text-2xl font-bold mb-4">Delegar Finalização de Atendimento</h2>
+            <p class="mb-4">Assistido: <strong id="delegation-assisted-name" class="text-green-600"></strong></p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="delegation-collaborator-select" class="block text-sm font-medium text-gray-700">Selecione o Colaborador</label>
+                    <select id="delegation-collaborator-select" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg"></select>
+                </div>
+                <div>
+                    <label for="delegation-collaborator-email" class="block text-sm font-medium text-gray-700">E-mail do Colaborador para Envio</label>
+                    <input type="email" id="delegation-collaborator-email" placeholder="email.colaborador@exemplo.com" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg">
+                </div>
+                <div>
+                    <button id="send-delegation-link-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Gerar e Enviar Link por E-mail</button>
+                </div>
+                <div class="hidden" id="generated-link-container">
+                    <label class="block text-sm font-medium text-gray-700">Link Gerado (copie se o e-mail falhar):</label>
+                    <div class="flex gap-2 mt-1">
+                        <textarea id="generated-link-text" rows="3" class="w-full p-2 border border-gray-300 rounded-lg bg-gray-50" readonly></textarea>
+                        <button id="copy-delegation-link-btn" class="bg-gray-200 text-gray-800 font-bold p-3 rounded-lg hover:bg-gray-300">Copiar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-4 mt-6">
+                <button id="cancel-delegation-btn" class="bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg hover:bg-gray-400">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Scripts -->
-    <!-- Corrigido o caminho para os scripts locais -->
     <script type="module" src="./js/main.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
     <script src="./js/notes.js"></script>
