@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, writeBatch, getDoc, setDoc, query, where, getDocs, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { subjectTree, flattenTreeWithObjects } from './assuntos.js';
 
@@ -244,11 +244,484 @@ const showNotification = (message, type = 'success') => {
     }, 3000);
 };
 
-// ... O restante do código de 'js/main.js' continua aqui, sem alterações ...
-// ... (código omitido para brevidade) ...
+const setupRealtimeListener = (pautaId) => {
+    if (unsubscribeFromAttendances) unsubscribeFromAttendances();
+    const attendanceCollectionRef = collection(db, "pautas", pautaId, "attendances");
+    unsubscribeFromAttendances = onSnapshot(attendanceCollectionRef, (snapshot) => {
+        allAssisted = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderAssistedList();
+    }, (error) => console.error("Erro no listener do Firestore: ", error));
+};
 
-// Adicione este novo listener de evento DENTRO do 'DOMContentLoaded'
-document.getElementById('delegation-collaborator-select').addEventListener('change', (e) => {
-    document.getElementById('delegation-collaborator-email').value = e.target.value;
+const loadPauta = async (pautaId, pautaName, pautaType) => {
+    currentPautaId = pautaId;
+    document.getElementById('pauta-title').textContent = pautaName;
+
+    // Disponibiliza dados globais para outros scripts
+    document.body.dataset.currentPautaId = pautaId;
+    document.body.dataset.pautaName = pautaName;
+    document.body.dataset.userEmail = auth.currentUser.email;
+
+    const pautaDoc = await getDoc(doc(db, "pautas", pautaId));
+    if (!pautaDoc.exists()) return;
+
+    const pautaData = pautaDoc.data();
+    currentPautaData = pautaData;
+    currentPautaOwnerId = pautaData.owner;
+    isPautaClosed = pautaData.isClosed || false;
+    
+    const ordem = pautaData.ordemAtendimento || 'padrao';
+    document.getElementById('logic-explanation-padrao').classList.toggle('hidden', ordem !== 'padrao');
+    document.getElementById('logic-explanation-chegada').classList.toggle('hidden', ordem !== 'chegada');
+
+    togglePautaLock(isPautaClosed);
+
+    if (pautaType === 'agendado') {
+         switchTab('agendamento');
+         document.getElementById('tab-agendamento').classList.remove('hidden');
+         document.getElementById('tab-avulso').classList.remove('hidden');
+         document.getElementById('pauta-column').classList.remove('hidden');
+    } else { // avulso
+         switchTab('avulso');
+         document.getElementById('tab-agendamento').classList.add('hidden');
+         document.getElementById('tab-avulso').classList.remove('hidden');
+         document.getElementById('pauta-column').classList.add('hidden');
+    }
+
+    setupRealtimeListener(pautaId);
+    showScreen('app');
+};
+
+const deletePauta = async (pautaId) => {
+    try {
+        await deleteDoc(doc(db, "pautas", pautaId));
+        showNotification("Pauta excluída com sucesso.", "info");
+    } catch (error) {
+        console.error("Erro ao excluir a pauta:", error);
+        showNotification("Erro ao excluir a pauta.", "error");
+    }
+};
+
+const createPautaCard = (docSnap) => {
+    const pauta = docSnap.data();
+    const card = document.createElement('div');
+    card.className = "relative bg-white p-6 rounded-lg shadow-md flex flex-col justify-between h-full hover:shadow-xl transition-shadow cursor-pointer";
+    
+    if (pauta.owner === auth.currentUser?.uid) {
+        const deleteButton = document.createElement('button');
+        deleteButton.className = "absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500";
+        deleteButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
+        deleteButton.onclick = (event) => {
+            event.stopPropagation(); 
+            if (confirm(`Tem certeza que deseja apagar a pauta "${pauta.name}"?`)) {
+                deletePauta(docSnap.id);
+            }
+        };
+        card.appendChild(deleteButton);
+    }
+    
+    card.innerHTML += `
+        <div>
+            <h3 class="font-bold text-xl mb-2">${pauta.name}</h3>
+            <p class="text-gray-600">Membros: ${pauta.memberEmails?.length || 1}</p>
+        </div>
+        <div class="mt-4 pt-2 border-t border-gray-200">
+            <p class="text-xs text-gray-500">Criada em: <strong>${new Date(pauta.createdAt).toLocaleDateString('pt-BR')}</strong></p>
+        </div>
+    `;
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        loadPauta(docSnap.id, pauta.name, pauta.type);
+    });
+    return card;
+};
+
+const showPautaSelectionScreen = (userId) => {
+    const pautasList = document.getElementById('pautas-list');
+    pautasList.innerHTML = '<p class="col-span-full text-center">Carregando pautas...</p>';
+    const q = query(collection(db, "pautas"), where("members", "array-contains", userId));
+
+    onSnapshot(q, (snapshot) => {
+        pautasList.innerHTML = ''; 
+        if (snapshot.empty) {
+            pautasList.innerHTML = '<p class="col-span-full text-center text-gray-500">Nenhuma pauta encontrada. Crie uma para começar.</p>';
+            return;
+        }
+        snapshot.docs.forEach((docSnap) => pautasList.appendChild(createPautaCard(docSnap)));
+    }, (error) => {
+        console.error("Erro ao buscar pautas:", error);
+        pautasList.innerHTML = '<p class="col-span-full text-center text-red-500">Ocorreu um erro ao carregar as pautas.</p>';
+    });
+
+    showScreen('pautaSelection');
+};
+
+const handleAuthState = () => {
+    onAuthStateChanged(auth, async (user) => {
+        const existingLogoutBtn = document.getElementById('pending-logout-btn');
+        if(existingLogoutBtn) existingLogoutBtn.remove();
+
+        if (user) {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists() && userDoc.data().status === 'approved') {
+                currentUserName = userDoc.data().name || user.email;
+                document.getElementById('admin-btn-main').classList.toggle('hidden', userDoc.data().role !== 'admin');
+                showPautaSelectionScreen(user.uid);
+            } else {
+                showScreen('loading');
+                loadingText.innerHTML = 'Sua conta está pendente de aprovação. <br> Por favor, aguarde.';
+                document.querySelector('.loader').style.display = 'none';
+                const logoutBtn = document.createElement('button');
+                logoutBtn.id = 'pending-logout-btn';
+                logoutBtn.textContent = 'Sair';
+                logoutBtn.className = 'mt-4 bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700';
+                logoutBtn.onclick = () => signOut(auth);
+                loadingText.parentElement.appendChild(logoutBtn);
+            }
+        } else {
+            showScreen('login');
+        }
+    });
+};
+
+const showScreen = (screenName) => {
+    ['loading', 'login', 'pautaSelection', 'app'].forEach(id => {
+        document.getElementById(`${id}-container`).classList.toggle('hidden', id !== screenName);
+    });
+};
+
+const switchTab = (tabName) => {
+    document.getElementById('tab-agendamento').classList.toggle('tab-active', tabName === 'agendamento');
+    document.getElementById('tab-avulso').classList.toggle('tab-active', tabName === 'avulso');
+    document.getElementById('is-scheduled-container').classList.toggle('hidden', tabName === 'avulso');
+    document.getElementById('form-title').textContent = tabName === 'agendamento' ? "Adicionar Novo Agendamento" : "Adicionar Atendimento Avulso";
+    
+    document.querySelector('input[name="is-scheduled"][value="no"]').checked = true;
+    document.querySelector('input[name="has-arrived"][value="no"]').checked = true;
+    document.getElementById('scheduled-time-wrapper').classList.add('hidden');
+    document.getElementById('arrival-time-wrapper').classList.add('hidden');
+    
+    if (tabName === 'avulso') {
+        document.querySelector('input[name="has-arrived"][value="yes"]').checked = true;
+        document.getElementById('arrival-time-wrapper').classList.remove('hidden');
+        document.getElementById('arrival-time').value = new Date().toTimeString().slice(0, 5);
+    }
+    renderAssistedList();
+};
+
+const main = () => {
+    try {
+        const firebaseConfig = { apiKey: "AIzaSyCrLwXmkxgeVoB8TwRI7pplCVQETGK0zkE", authDomain: "pauta-ce162.firebaseapp.com", projectId: "pauta-ce162", storageBucket: "pauta-ce162.appspot.com", messagingSenderId: "87113750208", appId: "1:87113750208:web:4abba0024f4d4af699bf25" };
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        handleAuthState();
+    } catch (error) {
+        console.error("Erro ao inicializar o Firebase: ", error);
+        loadingText.textContent = 'Erro na configuração do Firebase.';
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    main();
+
+    // Lógica de Login/Cadastro
+    const loginTabBtn = document.getElementById('login-tab-btn');
+    const registerTabBtn = document.getElementById('register-tab-btn');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+
+    loginTabBtn.addEventListener('click', () => {
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        loginTabBtn.classList.add('border-green-600', 'text-green-600');
+        registerTabBtn.classList.remove('border-green-600', 'text-green-600');
+    });
+
+    registerTabBtn.addEventListener('click', () => {
+        registerForm.classList.remove('hidden');
+        loginForm.classList.add('hidden');
+        registerTabBtn.classList.add('border-green-600', 'text-green-600');
+        loginTabBtn.classList.remove('border-green-600', 'text-green-600');
+    });
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const errorDiv = document.getElementById('auth-error');
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            errorDiv.classList.add('hidden');
+        } catch (error) {
+            errorDiv.textContent = 'Email ou senha inválidos.';
+            errorDiv.classList.remove('hidden');
+        }
+    });
+
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('register-name').value;
+        const email = document.getElementById('register-email').value;
+        const password = document.getElementById('register-password').value;
+        const errorDiv = document.getElementById('auth-error');
+
+        if (password.length < 6) {
+            errorDiv.textContent = 'A senha deve ter pelo menos 6 caracteres.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            await setDoc(doc(db, "users", user.uid), {
+                name: name, email: email, uid: user.uid,
+                status: 'pending', role: 'user', 
+                createdAt: new Date().toISOString()
+            });
+            errorDiv.classList.add('hidden');
+            showNotification('Conta criada! Aguardando aprovação do administrador.', 'info');
+            loginTabBtn.click();
+        } catch (error) {
+            errorDiv.textContent = error.code === 'auth/email-already-in-use' ? 'Este email já está em uso.' : 'Erro ao criar a conta.';
+            errorDiv.classList.remove('hidden');
+        }
+    });
+    
+    // Painel do Administrador
+    document.getElementById('admin-btn-main').addEventListener('click', async () => {
+        const adminModal = document.getElementById('admin-modal');
+        adminModal.classList.remove('hidden');
+        adminModal.innerHTML = `
+            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h2 class="text-2xl font-bold text-gray-800">Painel do Administrador</h2>
+                    <button id="close-admin-modal-btn" class="text-gray-400 hover:text-gray-600 text-3xl">&times;</button>
+                </div>
+                <div id="admin-user-list" class="overflow-y-auto">
+                    <div class="text-center p-8"><div class="loader mx-auto"></div> Carregando usuários...</div>
+                </div>
+            </div>`;
+        document.getElementById('close-admin-modal-btn').onclick = () => adminModal.classList.add('hidden');
+        
+        try {
+            const usersSnapshot = await getDocs(collection(db, "users"));
+            const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            const userListContainer = document.getElementById('admin-user-list');
+            userListContainer.innerHTML = `
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                        <tr><th scope="col" class="py-3 px-6">Nome</th><th scope="col" class="py-3 px-6">Email</th><th scope="col" class="py-3 px-6">Status</th><th scope="col" class="py-3 px-6">Ações</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>`;
+            const tbody = userListContainer.querySelector('tbody');
+            users.sort((a, b) => (a.status === 'pending' ? -1 : 1)).forEach(user => {
+                const tr = document.createElement('tr');
+                tr.className = 'bg-white border-b';
+                tr.innerHTML = `
+                    <td class="py-4 px-6 font-medium text-gray-900">${user.name}</td>
+                    <td class="py-4 px-6">${user.email}</td>
+                    <td class="py-4 px-6"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">${user.status}</span></td>
+                    <td class="py-4 px-6">
+                        ${user.status === 'pending' ? `<button data-uid="${user.id}" class="approve-user-btn font-medium text-green-600 hover:underline mr-4">Aprovar</button>` : ''}
+                        <button data-uid="${user.id}" class="delete-user-btn font-medium text-red-600 hover:underline">Deletar</button>
+                    </td>`;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error("Erro ao carregar usuários:", error);
+            document.getElementById('admin-user-list').innerHTML = '<p class="text-red-500">Erro ao carregar usuários.</p>';
+        }
+    });
+
+    document.getElementById('admin-modal').addEventListener('click', async (e) => {
+        const uid = e.target.dataset.uid;
+        if (!uid) return;
+        if (e.target.classList.contains('approve-user-btn')) {
+            if (confirm('Aprovar este usuário?')) {
+                await updateDoc(doc(db, "users", uid), { status: 'approved' });
+                showNotification('Usuário aprovado!');
+                document.getElementById('admin-btn-main').click();
+            }
+        } else if (e.target.classList.contains('delete-user-btn')) {
+            if (confirm('Deletar este usuário permanentemente?')) {
+                await deleteDoc(doc(db, "users", uid));
+                showNotification('Usuário deletado.');
+                document.getElementById('admin-btn-main').click();
+            }
+        }
+    });
+    
+    // Demais Listeners
+    document.getElementById('tab-agendamento').addEventListener('click', () => switchTab('agendamento'));
+    document.getElementById('tab-avulso').addEventListener('click', () => switchTab('avulso'));
+    document.getElementById('logout-btn-main').addEventListener('click', () => signOut(auth));
+    document.getElementById('logout-btn-app').addEventListener('click', () => signOut(auth));
+    ['pauta-search', 'aguardando-search', 'atendidos-search', 'faltosos-search'].forEach(id => {
+        document.getElementById(id).addEventListener('input', renderAssistedList);
+    });
+    
+    document.getElementById('back-to-pautas-btn').addEventListener('click', () => {
+        if (unsubscribeFromAttendances) unsubscribeFromAttendances();
+        if (unsubscribeFromCollaborators) unsubscribeFromCollaborators();
+        currentPautaId = null; allAssisted = []; colaboradores = [];
+        showPautaSelectionScreen(auth.currentUser.uid);
+    });
+
+    document.getElementById('delegation-collaborator-select').addEventListener('change', (e) => {
+        document.getElementById('delegation-collaborator-email').value = e.target.value;
+    });
+
+    document.body.addEventListener('click', async (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+
+        const id = button.dataset.id;
+        const collectionRef = currentPautaId ? collection(db, "pautas", currentPautaId, "attendances") : null;
+        
+        // Ações que independem do ID
+        if (button.id === 'add-assisted-btn') {
+            const name = document.getElementById('assisted-name').value.trim();
+            if (!name) return showNotification("O nome é obrigatório.", "error");
+            
+            const currentMode = document.getElementById('tab-agendamento').classList.contains('tab-active') ? 'agendamento' : 'avulso';
+            const isScheduled = document.querySelector('input[name="is-scheduled"]:checked').value === 'yes';
+            const hasArrived = document.querySelector('input[name="has-arrived"]:checked').value === 'yes';
+            const scheduledTimeValue = isScheduled ? document.getElementById('scheduled-time').value : null;
+
+            if (currentMode === 'agendamento' && isScheduled && !scheduledTimeValue) {
+                return showNotification("Por favor, informe o horário agendado.", "error");
+            }
+            
+            let arrivalDate = null;
+            if (hasArrived) {
+                const [h, m] = document.getElementById('arrival-time').value.split(':');
+                arrivalDate = new Date();
+                arrivalDate.setHours(h, m, 0, 0);
+            }
+            
+            const newAssisted = getUpdatePayload({
+                name,
+                cpf: document.getElementById('assisted-cpf').value.trim(),
+                subject: document.getElementById('assisted-subject').value.trim(),
+                type: currentMode,
+                status: hasArrived ? 'aguardando' : 'pauta',
+                scheduledTime: scheduledTimeValue,
+                arrivalTime: hasArrived ? arrivalDate.toISOString() : null,
+                createdAt: new Date().toISOString()
+            });
+
+            await addDoc(collectionRef, newAssisted);
+            showNotification("Assistido adicionado com sucesso!");
+            document.getElementById('form-agendamento').reset();
+            switchTab(currentMode);
+        }
+        
+        // ... (outros listeners de botões como 'confirm-arrival-btn', etc)
+
+        if (button.classList.contains('toggle-details-btn')) {
+            const details = button.closest('.relative').querySelector('.card-details');
+            const icon = button.querySelector('svg');
+            details.classList.toggle('hidden');
+            icon.style.transform = details.classList.contains('hidden') ? 'rotate(180deg)' : 'rotate(0deg)';
+        }
+
+        if (id && collectionRef) {
+            const docRef = doc(collectionRef, id);
+            if (button.classList.contains('delegate-btn')) {
+                assistedIdToHandle = id;
+                const assisted = allAssisted.find(a => a.id === id);
+                document.getElementById('delegation-assisted-name').textContent = assisted.name;
+                
+                const select = document.getElementById('delegation-collaborator-select');
+                select.innerHTML = '<option value="">Selecione um colaborador</option>';
+                colaboradores.forEach(c => {
+                    const option = new Option(c.nome, c.email);
+                    select.appendChild(option);
+                });
+                
+                document.getElementById('delegation-modal').classList.remove('hidden');
+            }
+        }
+        
+         if (button.id === 'send-delegation-link-btn') {
+            const collaboratorName = document.getElementById('delegation-collaborator-select').selectedOptions[0].text;
+            const collaboratorEmail = document.getElementById('delegation-collaborator-email').value;
+            if (!collaboratorEmail) return showNotification("Selecione um colaborador ou insira um e-mail.", "error");
+
+            const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
+            const url = `${baseUrl}atendimento_externo.html?pautaId=${currentPautaId}&assistidoId=${assistedIdToHandle}&collaboratorName=${encodeURIComponent(collaboratorName)}`;
+
+            document.getElementById('generated-link-text').value = url;
+            document.getElementById('generated-link-container').classList.remove('hidden');
+
+            // ATENÇÃO: Substitua pelos seus IDs do EmailJS
+            const serviceID = 'default_service';
+            const templateID = 'template_z26i5gq';
+
+            button.disabled = true;
+            button.textContent = 'Enviando...';
+            
+            emailjs.send(serviceID, templateID, {
+                to_email: collaboratorEmail,
+                pauta_name: currentPautaData.name,
+                assistido_name: document.getElementById('delegation-assisted-name').textContent,
+                link: url
+            }).then(() => {
+                showNotification('E-mail enviado com sucesso!', 'success');
+                button.textContent = 'E-mail Enviado';
+            }, (err) => {
+                showNotification('Falha ao enviar e-mail. Copie o link manualmente.', 'error');
+                console.error('EmailJS error:', err);
+                button.textContent = 'Falha no Envio';
+            });
+        }
+        
+        if(button.id === 'copy-delegation-link-btn') {
+            const link = document.getElementById('generated-link-text').value;
+            navigator.clipboard.writeText(link).then(() => showNotification('Link copiado!', 'info'));
+        }
+        
+        if (button.id === 'cancel-delegation-btn') {
+            document.getElementById('delegation-modal').classList.add('hidden');
+            document.getElementById('generated-link-container').classList.add('hidden');
+            document.getElementById('send-delegation-link-btn').disabled = false;
+            document.getElementById('send-delegation-link-btn').textContent = 'Gerar e Enviar Link por E-mail';
+        }
+
+    });
+    
+    // Lógica de Colaboradores
+    const collaboratorForm = document.getElementById('collaborator-form');
+    collaboratorForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const collaboratorData = {
+            nome: document.getElementById('collaborator-name').value,
+            email: document.getElementById('collaborator-email').value,
+            telefone: document.getElementById('collaborator-phone').value,
+            transporte: collaboratorForm.querySelector('input[name="transporte"]:checked').value,
+            localEncontro: collaboratorForm.querySelector('input[name="localEncontro"]:checked')?.value || '',
+            observacao: document.getElementById('collaborator-obs').value,
+        };
+
+        try {
+            const collRef = collection(db, "pautas", currentPautaId, "collaborators");
+            if (editCollaboratorId) {
+                await updateDoc(doc(collRef, editCollaboratorId), collaboratorData);
+                showNotification("Colaborador atualizado!");
+            } else {
+                await addDoc(collRef, { ...collaboratorData, presente: false, horario: '--:--' });
+                showNotification("Colaborador adicionado!");
+            }
+            collaboratorForm.reset();
+            editCollaboratorId = null;
+        } catch (error) {
+            showNotification("Erro ao salvar colaborador.", "error");
+        }
+    });
+
 });
 
