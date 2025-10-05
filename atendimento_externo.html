@@ -86,15 +86,13 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, getDoc, updateDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- ELEMENTOS DO DOM ---
         const loadingContainer = document.getElementById('loading-container');
         const errorContainer = document.getElementById('error-container');
         const mainContainer = document.getElementById('main-container');
         const successContainer = document.getElementById('success-container');
 
-        // --- LÓGICA PRINCIPAL ---
         document.addEventListener('DOMContentLoaded', async () => {
             const params = new URLSearchParams(window.location.search);
             const pautaId = params.get('pautaId');
@@ -103,12 +101,11 @@
 
             if (!pautaId || !assistidoId) {
                 showScreen('error');
-                document.getElementById('error-message').textContent = 'Link de atendimento inválido ou incompleto. Faltam parâmetros essenciais.';
+                document.getElementById('error-message').textContent = 'Link de atendimento inválido ou incompleto.';
                 return;
             }
 
             try {
-                // Cole aqui a configuração do seu Firebase
                 const firebaseConfig = { apiKey: "AIzaSyCrLwXmkxgeVoB8TwRI7pplCVQETGK0zkE", authDomain: "pauta-ce162.firebaseapp.com", projectId: "pauta-ce162", storageBucket: "pauta-ce162.appspot.com", messagingSenderId: "87113750208", appId: "1:87113750208:web:4abba0024f4d4af699bf25" };
                 const app = initializeApp(firebaseConfig);
                 const db = getFirestore(app);
@@ -118,7 +115,7 @@
 
                 if (!docSnap.exists()) {
                     showScreen('error');
-                    document.getElementById('error-message').textContent = 'Atendimento não encontrado. Verifique se o link está correto.';
+                    document.getElementById('error-message').textContent = 'Atendimento não encontrado.';
                     return;
                 }
 
@@ -126,8 +123,8 @@
                 
                 if (assistido.finalizadoPeloColaborador) {
                     showScreen('success');
-                     document.querySelector('#success-container h2').textContent = "Atendimento Já Finalizado";
-                    document.querySelector('#success-container p').textContent = "Este registro de atendimento já foi finalizado anteriormente. Obrigado!";
+                    document.querySelector('#success-container h2').textContent = "Atendimento Já Finalizado";
+                    document.querySelector('#success-container p').textContent = "Este registro de atendimento já foi finalizado anteriormente.";
                     return;
                 }
 
@@ -138,16 +135,14 @@
             } catch (error) {
                 console.error("Erro ao conectar ou buscar dados: ", error);
                 showScreen('error');
-                document.getElementById('error-message').textContent = 'Ocorreu um problema ao conectar com o serviço. Tente novamente mais tarde.';
+                document.getElementById('error-message').textContent = 'Ocorreu um problema ao conectar com o serviço.';
             }
         });
 
         function showScreen(screenName) {
-            loadingContainer.classList.add('hidden');
-            errorContainer.classList.add('hidden');
-            mainContainer.classList.add('hidden');
-            successContainer.classList.add('hidden');
-            
+            ['loading', 'error', 'main', 'success'].forEach(id => {
+                document.getElementById(`${id}-container`).classList.add('hidden');
+            });
             document.getElementById(`${screenName}-container`).classList.remove('hidden');
         }
 
@@ -156,8 +151,6 @@
             document.getElementById('assistido-name-header').textContent = assistido.name;
             document.getElementById('assistido-name-summary').textContent = assistido.name;
             document.getElementById('assistido-subject').textContent = assistido.subject || 'Não informado';
-            
-            // Preenche o nome do atendente com o nome do colaborador da URL, ou o que já estava salvo
             document.getElementById('attendant-name').value = collaboratorName || assistido.attendant || '';
         }
 
@@ -167,7 +160,6 @@
             const demandsList = document.getElementById('demands-list');
             const finishBtn = document.getElementById('finish-btn');
 
-            // Popula as demandas já existentes, se houver
             const existingDemands = assistido.demandas?.descricoes || [];
             existingDemands.forEach(addDemandToList);
 
@@ -193,7 +185,7 @@
                 demandsList.appendChild(li);
             }
             
-             newDemandInput.addEventListener('keypress', (e) => {
+            newDemandInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     addDemandBtn.click();
@@ -208,12 +200,11 @@
                 const additionalDemands = Array.from(demandsList.querySelectorAll('li')).map(li => li.firstChild.textContent);
 
                 try {
-                    // Combina as demandas existentes (se houver) com as novas, evitando duplicatas
                     const existingDemands = assistido.demandas?.descricoes || [];
                     const allDemands = [...new Set([...existingDemands, ...additionalDemands])];
 
                     await updateDoc(docRef, {
-                        attendant: attendantName, // Atualiza o nome do atendente com o valor final
+                        attendant: attendantName,
                         "demandas.descricoes": allDemands,
                         "demandas.quantidade": allDemands.length,
                         finalizadoPeloColaborador: true,
@@ -231,4 +222,3 @@
     </script>
 </body>
 </html>
-
