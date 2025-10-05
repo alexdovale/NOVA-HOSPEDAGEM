@@ -386,7 +386,12 @@ const handleAuthState = () => {
 
 const showScreen = (screenName) => {
     ['loading', 'login', 'pautaSelection', 'app'].forEach(id => {
-        document.getElementById(`${id}-container`).classList.toggle('hidden', id !== screenName);
+        const container = document.getElementById(`${id}-container`);
+        if (container) {
+            container.classList.toggle('hidden', id !== screenName);
+        } else {
+            console.error(`Container not found: #${id}-container`);
+        }
     });
 };
 
