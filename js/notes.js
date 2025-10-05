@@ -32,13 +32,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const saved = localStorage.getItem(key) || "";
             notesText.value = saved;
-            notesModal.classList.remove("hidden");
+            if(notesModal) notesModal.classList.remove("hidden");
         });
     }
 
     if (closeNotesBtn) {
         closeNotesBtn.addEventListener("click", () => {
-            notesModal.classList.add("hidden");
+            if(notesModal) notesModal.classList.add("hidden");
         });
     }
 
@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             localStorage.setItem(key, notesText.value);
             showNotification("Anotação salva com sucesso!");
-            notesModal.classList.add("hidden");
+            if(notesModal) notesModal.classList.add("hidden");
         });
     }
 });
