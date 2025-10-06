@@ -119,7 +119,7 @@
 
                 const assistido = docSnap.data();
                 
-                if (assistido.finalizadoPeloColaborador || assistido.status === 'atendido') {
+                if (assistido.status === 'atendido') {
                     showScreen('success', 'Este registro de atendimento já foi finalizado anteriormente. Obrigado!');
                     document.querySelector('#success-container h2').textContent = "Atendimento Já Finalizado";
                     return;
@@ -211,8 +211,7 @@
                         attendedTime: new Date().toISOString(),
                         "demandas.descricoes": allDemands,
                         "demandas.quantidade": allDemands.length,
-                        finalizadoPeloColaborador: true,
-                        finalizadoEm: new Date().toISOString()
+                        finalizadoPeloColaborador: true
                     });
                     showScreen('success', 'Obrigado por sua confirmação. Os detalhes do atendimento foram finalizados com sucesso.');
                 } catch(error) {
