@@ -76,7 +76,7 @@ const renderAssistedList = () => {
         finalizado: document.getElementById('finalizados-list'),
         faltoso: document.getElementById('faltosos-list')
     };
-    Object.values(lists).forEach(el => el.innerHTML = '');
+    Object.values(lists).forEach(el => { if(el) el.innerHTML = ''; });
 
     const currentMode = document.getElementById('tab-agendamento').classList.contains('tab-active') ? 'agendamento' : 'avulso';
     const searchTerms = {
@@ -198,12 +198,89 @@ const renderAssistedList = () => {
     });
 };
 
-const setupFirebase = () => {
+const setupFirebaseListeners = (pautaId) => {
+    if (unsubscribeFromAttendances) unsubscribeFromAttendances();
+    if (unsubscribeFromCollaborators) unsubscribeFromCollaborators();
+    
+    const attendanceCollectionRef = collection(db, "pautas", pautaId, "attendances");
+    unsubscribeFromAttendances = onSnapshot(attendanceCollectionRef, (snapshot) => {
+        allAssisted = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderAssistedList();
+    });
+
+    const collaboratorsCollectionRef = collection(db, "pautas", pautaId, "collaborators");
+    unsubscribeFromCollaborators = onSnapshot(collaboratorsCollectionRef, (snapshot) => {
+        colaboradores = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => a.nome.localeCompare(b.nome));
+    });
+};
+
+const loadPauta = async (pautaId, pautaName, pautaType) => {
+    currentPautaId = pautaId;
+    document.getElementById('pauta-title').textContent = pautaName;
+    document.body.dataset.currentPautaId = pautaId;
+    
+    const pautaDoc = await getDoc(doc(db, "pautas", pautaId));
+    if (!pautaDoc.exists()) return;
+
+    currentPautaData = pautaDoc.data();
+    currentPautaOwnerId = currentPautaData.owner;
+    
+    setupFirebaseListeners(pautaId);
+    showScreen('app');
+};
+
+const deletePauta = (pautaId) => {
+     const pautaRef = doc(db, "pautas", pautaId);
+     deleteDoc(pautaRef).then(() => {
+        showNotification("Pauta apagada com sucesso.", "info");
+     }).catch(e => {
+        showNotification("Erro ao apagar pauta.", "error");
+     });
+}
+
+const showPautaSelectionScreen = (userId) => {
+    const pautasList = document.getElementById('pautas-list');
+    pautasList.innerHTML = '<p class="col-span-full text-center">Carregando pautas...</p>';
+    const q = query(collection(db, "pautas"), where("members", "array-contains", userId));
+
+    onSnapshot(q, (snapshot) => {
+        pautasList.innerHTML = ''; 
+        if (snapshot.empty) {
+            pautasList.innerHTML = '<p class="col-span-full text-center text-gray-500">Nenhuma pauta encontrada.</p>';
+            return;
+        }
+        snapshot.docs.forEach((docSnap) => {
+            const pauta = docSnap.data();
+            const card = document.createElement('div');
+            card.className = "relative bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer";
+            card.dataset.pautaId = docSnap.id;
+            card.dataset.pautaName = pauta.name;
+            card.dataset.pautaType = pauta.type;
+
+            if (pauta.owner === auth.currentUser?.uid) {
+                card.innerHTML = `
+                <button class="delete-pauta-btn absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600">
+                    <svg class="pointer-events-none" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>`;
+            }
+            card.innerHTML += `
+                <h3 class="font-bold text-xl mb-2 pointer-events-none">${pauta.name}</h3>
+                <p class="text-gray-600 pointer-events-none">Membros: ${pauta.memberEmails?.length || 1}</p>
+            `;
+            pautasList.appendChild(card);
+        });
+    });
+    showScreen('pautaSelection');
+}
+
+
+// Inicialização e Eventos Globais
+document.addEventListener('DOMContentLoaded', () => {
     try {
         const firebaseConfig = { apiKey: "AIzaSyCrLwXmkxgeVoB8TwRI7pplCVQETGK0zkE", authDomain: "pauta-ce162.firebaseapp.com", projectId: "pauta-ce162", storageBucket: "pauta-ce162.appspot.com", messagingSenderId: "87113750208", appId: "1:87113750208:web:4abba0024f4d4af699bf25" };
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
+        initializeApp(firebaseConfig);
+        db = getFirestore();
+        auth = getAuth();
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -212,129 +289,128 @@ const setupFirebase = () => {
                     showPautaSelectionScreen(user.uid);
                 } else {
                     showScreen('loading');
-                    loadingText.innerHTML = 'Sua conta está pendente de aprovação. <br> Por favor, aguarde ou contate um administrador.';
+                    loadingContainer.innerHTML = '<p class="text-center text-yellow-700 font-semibold">Sua conta está pendente de aprovação.<br>Por favor, aguarde ou contate um administrador.</p><button id="logout-btn-pending" class="mt-4 bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">Sair</button>';
+                    document.getElementById('logout-btn-pending').addEventListener('click', () => signOut(auth));
                 }
             } else {
                 showScreen('login');
             }
         });
-    } catch (error) {
-        console.error("Erro ao inicializar o Firebase: ", error);
-        loadingText.textContent = 'Erro na configuração do Firebase.';
+    } catch(e) {
+         loadingContainer.innerHTML = '<p class="text-red-600">Erro fatal ao carregar a aplicação. Verifique a consola.</p>';
     }
-};
 
-const attachInitialEventListeners = () => {
-    // Delegação de eventos para conteúdo dinâmico
-    document.getElementById('pautas-list').addEventListener('click', (e) => {
-        const card = e.target.closest('[data-pauta-id]');
-        if (card) {
-            if (e.target.closest('.delete-pauta-btn')) {
-                if (confirm(`Tem certeza que deseja apagar a pauta "${card.dataset.pautaName}"?`)) {
-                    deletePauta(card.dataset.pautaId);
-                }
-            } else {
-                const { pautaId, pautaName, pautaType } = card.dataset;
-                loadPauta(pautaId, pautaName, pautaType);
-            }
-        }
-    });
-    
-    // Eventos estáticos
-    document.getElementById('create-pauta-btn').addEventListener('click', () => {
-        document.getElementById('pauta-type-modal').classList.remove('hidden');
-    });
-
-    document.getElementById('actions-toggle').addEventListener('click', () => {
-        const panel = document.getElementById('actions-panel');
-        const arrow = document.getElementById('actions-arrow');
-        panel.classList.toggle('opacity-0');
-        panel.classList.toggle('scale-90');
-        panel.classList.toggle('pointer-events-none');
-        arrow.classList.toggle('rotate-180');
-    });
-
-    document.getElementById('toggle-logic-btn-padrao').addEventListener('click', (e) => {
-        const explanation = document.getElementById('logic-explanation-padrao-content');
-        const isHidden = explanation.classList.toggle('hidden');
-        e.target.textContent = isHidden ? 'Por que esta ordem é justa? (Clique para expandir)' : 'Ocultar explicação';
-    });
-
-    document.getElementById('download-pdf-btn').addEventListener('click', () => {
-        const { jsPDF } = window.jspdf;
-        const docPDF = new jsPDF();
-        const finalizados = allAssisted.filter(a => a.status === 'atendido');
-
-        if (finalizados.length === 0) return showNotification("Não há atendimentos finalizados para gerar o relatório.", "info");
-        
-        docPDF.text(`Relatório de Atendimentos Finalizados - ${currentPautaData.name}`, 14, 22);
-        const tableColumn = ["#", "Nome", "Assunto Principal", "Atendente", "Finalizado"];
-        const tableRows = finalizados.map((item, index) => [
-            index + 1, item.name, item.subject, item.attendant || 'N/A',
-            new Date(item.attendedTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-        ]);
-        docPDF.autoTable(tableColumn, tableRows, { startY: 30 });
-        docPDF.save(`relatorio_finalizados_${currentPautaData.name.replace(/\s/g, '_')}.pdf`);
-    });
-
-    // Listener para todos os modais e botões de ação
-    document.getElementById('app-container').addEventListener('click', async e => {
+    // Event Delegation para toda a página
+    document.body.addEventListener('click', async (e) => {
         const button = e.target.closest('button');
         if (!button) return;
 
-        const id = button.dataset.id;
-        if (!id || !currentPautaId) return;
-
-        const docRef = doc(db, "pautas", currentPautaId, "attendances", id);
+        // Ações que não precisam de contexto de pauta
+        if(button.id === 'logout-btn-main' || button.id === 'logout-btn-app') return signOut(auth);
+        if(button.id === 'create-pauta-btn') return document.getElementById('pauta-type-modal').classList.remove('hidden');
+        if(button.id === 'actions-toggle') {
+            document.getElementById('actions-panel').classList.toggle('opacity-0');
+            document.getElementById('actions-arrow').classList.toggle('rotate-180');
+            return;
+        }
+        if(button.id === 'toggle-logic-btn-padrao') {
+             const explanation = document.getElementById('logic-explanation-padrao-content');
+             explanation.classList.toggle('hidden');
+             button.textContent = explanation.classList.contains('hidden') ? 'Por que esta ordem é justa? (Clique para expandir)' : 'Ocultar explicação';
+             return;
+        }
+        if(button.id === 'download-pdf-btn') {
+            const { jsPDF } = window.jspdf;
+            const docPDF = new jsPDF();
+            const finalizados = allAssisted.filter(a => a.status === 'atendido');
+            if (finalizados.length === 0) return showNotification("Não há atendimentos finalizados para gerar o relatório.", "info");
+            docPDF.text(`Relatório de Atendimentos Finalizados - ${currentPautaData.name}`, 14, 22);
+            docPDF.autoTable({
+                head: [["#", "Nome", "Assunto", "Atendente", "Finalizado"]],
+                body: finalizados.map((item, i) => [i + 1, item.name, item.subject, item.attendant || 'N/A', new Date(item.attendedTime).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})]),
+                startY: 30
+            });
+            docPDF.save(`relatorio_${currentPautaData.name.replace(/\s/g, '_')}.pdf`);
+            return;
+        }
         
+        // Ações que precisam de contexto (currentPautaId)
+        if (!currentPautaId) return;
+        const id = button.dataset.id;
+        const docRef = id ? doc(db, "pautas", currentPautaId, "attendances", id) : null;
+
         if (button.classList.contains('attend-btn')) {
             assistedIdToHandle = id;
             const datalist = document.getElementById('collaborators-list');
             datalist.innerHTML = '';
-            colaboradores.forEach(c => datalist.add(new Option(c.nome, c.nome)));
+            colaboradores.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.nome;
+                datalist.appendChild(option);
+            });
             document.getElementById('attendant-modal').classList.remove('hidden');
-        } else if(button.classList.contains('delegate-btn')) {
+        } else if (button.id === 'confirm-attendant-btn') {
+            const attendantName = document.getElementById('attendant-name').value.trim();
+            if(assistedIdToHandle) {
+                await updateDoc(doc(db, "pautas", currentPautaId, "attendances", assistedIdToHandle), getUpdatePayload({ status: 'em-atendimento', attendant: attendantName }));
+                document.getElementById('attendant-modal').classList.add('hidden');
+                document.getElementById('attendant-name').value = '';
+            }
+        } else if (button.classList.contains('delegate-btn')) {
             assistedIdToHandle = id;
             const assisted = allAssisted.find(a => a.id === id);
             document.getElementById('delegation-assisted-name').textContent = assisted.name;
             const select = document.getElementById('delegation-collaborator-select');
-            select.innerHTML = '<option value="">Selecione um colaborador</option>';
+            select.innerHTML = '<option value="">Selecione...</option>';
             colaboradores.forEach(c => select.add(new Option(c.nome, c.email)));
             document.getElementById('delegation-modal').classList.remove('hidden');
-        } else if (button.classList.contains('finalize-btn')) {
+        } else if(button.id === 'generate-delegation-link-btn') {
+            const select = document.getElementById('delegation-collaborator-select');
+            if (!select.value) return showNotification("Selecione um colaborador.", "error");
+            
+            const collaboratorName = select.options[select.selectedIndex].text;
+            const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
+            const url = `${baseUrl}atendimento_externo.html?pautaId=${currentPautaId}&assistidoId=${assistedIdToHandle}&collaboratorName=${encodeURIComponent(collaboratorName)}`;
+
+            const linkText = document.getElementById('generated-link-text');
+            linkText.value = url;
+            document.getElementById('generated-link-container').classList.remove('hidden');
+            navigator.clipboard.writeText(url).then(() => showNotification('Link copiado!', 'success'));
+        } else if (button.classList.contains('finalize-btn') && docRef) {
             if (confirm("Finalizar este atendimento?")) {
                 await updateDoc(docRef, getUpdatePayload({ status: 'atendido', attendedTime: new Date().toISOString() }));
                 showNotification("Atendimento finalizado!");
             }
+        } else if (button.classList.contains('return-to-aguardando-btn') && docRef) {
+            await updateDoc(docRef, getUpdatePayload({ status: 'aguardando', attendant: null }));
+        } else if (button.classList.contains('check-in-btn') && docRef) {
+             document.getElementById('arrival-time-input').value = new Date().toTimeString().slice(0, 5);
+             assistedIdToHandle = id;
+             document.getElementById('arrival-modal').classList.remove('hidden');
+        } else if (button.id === 'confirm-arrival-btn') {
+            const arrivalTime = document.getElementById('arrival-time-input').value;
+            if(assistedIdToHandle && arrivalTime) {
+                const arrivalDate = new Date();
+                const [h,m] = arrivalTime.split(':');
+                arrivalDate.setHours(h,m,0,0);
+                await updateDoc(doc(db, "pautas", currentPautaId, "attendances", assistedIdToHandle), getUpdatePayload({ status: 'aguardando', arrivalTime: arrivalDate.toISOString() }));
+                document.getElementById('arrival-modal').classList.add('hidden');
+            }
         }
-    });
-
-     document.getElementById('confirm-attendant-btn').addEventListener('click', async () => {
-        const attendantName = document.getElementById('attendant-name').value.trim();
-        if(assistedIdToHandle){
-            await updateDoc(doc(db, "pautas", currentPautaId, "attendances", assistedIdToHandle), getUpdatePayload({ status: 'em-atendimento', attendant: attendantName }));
-            document.getElementById('attendant-modal').classList.add('hidden');
-        }
-    });
-
-    document.getElementById('generate-delegation-link-btn').addEventListener('click', () => {
-        const select = document.getElementById('delegation-collaborator-select');
-        if (!select.value) return showNotification("Selecione um colaborador.", "error");
         
-        const collaboratorName = select.options[select.selectedIndex].text;
-        const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
-        const url = `${baseUrl}atendimento_externo.html?pautaId=${currentPautaId}&assistidoId=${assistedIdToHandle}&collaboratorName=${encodeURIComponent(collaboratorName)}`;
-
-        const linkText = document.getElementById('generated-link-text');
-        linkText.value = url;
-        document.getElementById('generated-link-container').classList.remove('hidden');
-        navigator.clipboard.writeText(url).then(() => showNotification('Link copiado!', 'success'));
+        // Fechar Modais
+        if (button.id.startsWith('cancel-') || button.id.startsWith('close-')) {
+            const modal = button.closest('.fixed');
+            if (modal) modal.classList.add('hidden');
+        }
     });
-};
 
-
-document.addEventListener('DOMContentLoaded', () => {
-    setupFirebase();
-    attachInitialEventListeners();
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = e.target.elements['login-email'].value;
+        const password = e.target.elements['login-password'].value;
+        try { await signInWithEmailAndPassword(auth, email, password); } 
+        catch (error) { showNotification('Email ou senha inválidos.', 'error'); }
+    });
 });
 
