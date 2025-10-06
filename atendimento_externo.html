@@ -100,8 +100,7 @@
             const collaboratorName = params.get('collaboratorName');
 
             if (!pautaId || !assistidoId) {
-                showScreen('error');
-                document.getElementById('error-message').textContent = 'Link de atendimento inválido ou incompleto.';
+                showScreen('error', 'Link de atendimento inválido ou incompleto.');
                 return;
             }
 
@@ -114,17 +113,15 @@
                 const docSnap = await getDoc(docRef);
 
                 if (!docSnap.exists()) {
-                    showScreen('error');
-                    document.getElementById('error-message').textContent = 'Atendimento não encontrado.';
+                    showScreen('error', 'Atendimento não encontrado. Verifique se o link está correto.');
                     return;
                 }
 
                 const assistido = docSnap.data();
                 
-                if (assistido.finalizadoPeloColaborador) {
-                    showScreen('success');
+                if (assistido.finalizadoPeloColaborador || assistido.status === 'atendido') {
+                    showScreen('success', 'Este registro de atendimento já foi finalizado anteriormente. Obrigado!');
                     document.querySelector('#success-container h2').textContent = "Atendimento Já Finalizado";
-                    document.querySelector('#success-container p').textContent = "Este registro de atendimento já foi finalizado anteriormente.";
                     return;
                 }
 
@@ -134,16 +131,22 @@
 
             } catch (error) {
                 console.error("Erro ao conectar ou buscar dados: ", error);
-                showScreen('error');
-                document.getElementById('error-message').textContent = 'Ocorreu um problema ao conectar com o serviço.';
+                showScreen('error', 'Ocorreu um problema ao conectar com o serviço. Tente novamente mais tarde.');
             }
         });
 
-        function showScreen(screenName) {
+        function showScreen(screenName, message = '') {
             ['loading', 'error', 'main', 'success'].forEach(id => {
                 document.getElementById(`${id}-container`).classList.add('hidden');
             });
-            document.getElementById(`${screenName}-container`).classList.remove('hidden');
+            
+            const container = document.getElementById(`${screenName}-container`);
+            container.classList.remove('hidden');
+
+            if (message) {
+                if (screenName === 'error') document.getElementById('error-message').textContent = message;
+                if (screenName === 'success') container.querySelector('p').textContent = message;
+            }
         }
 
         function populateData(assistido, collaboratorName) {
@@ -160,8 +163,7 @@
             const demandsList = document.getElementById('demands-list');
             const finishBtn = document.getElementById('finish-btn');
 
-            const existingDemands = assistido.demandas?.descricoes || [];
-            existingDemands.forEach(addDemandToList);
+            (assistido.demandas?.descricoes || []).forEach(addDemandToList);
 
             addDemandBtn.addEventListener('click', () => {
                 const demandText = newDemandInput.value.trim();
@@ -185,7 +187,7 @@
                 demandsList.appendChild(li);
             }
             
-            newDemandInput.addEventListener('keypress', (e) => {
+             newDemandInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     addDemandBtn.click();
@@ -204,13 +206,15 @@
                     const allDemands = [...new Set([...existingDemands, ...additionalDemands])];
 
                     await updateDoc(docRef, {
+                        status: 'atendido',
                         attendant: attendantName,
+                        attendedTime: new Date().toISOString(),
                         "demandas.descricoes": allDemands,
                         "demandas.quantidade": allDemands.length,
                         finalizadoPeloColaborador: true,
                         finalizadoEm: new Date().toISOString()
                     });
-                    showScreen('success');
+                    showScreen('success', 'Obrigado por sua confirmação. Os detalhes do atendimento foram finalizados com sucesso.');
                 } catch(error) {
                     console.error("Erro ao atualizar o documento: ", error);
                     alert("Não foi possível salvar a finalização. Tente novamente.");
