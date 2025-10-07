@@ -43,7 +43,7 @@ const showScreen = (screenName) => {
         if (container) {
             container.classList.toggle('hidden', id !== screenName);
         } else {
-            console.error(`Container not found: #${id}-container`);
+            console.error(`CRITICAL ERROR: Container not found: #${id}-container. The application cannot switch screens correctly.`);
         }
     });
 };
@@ -260,7 +260,7 @@ const showPautaSelectionScreen = (userId) => {
             if (pauta.owner === auth.currentUser?.uid) {
                 card.innerHTML = `
                 <button class="delete-pauta-btn absolute top-3 right-3 p-1 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600">
-                    <svg class="pointer-events-none" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    <svg class="pointer-events-none" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>`;
             }
             card.innerHTML += `
@@ -269,18 +269,20 @@ const showPautaSelectionScreen = (userId) => {
             `;
             pautasList.appendChild(card);
         });
+    }, (error) => {
+        console.error("Error fetching pautas: ", error);
+        pautasList.innerHTML = '<p class="col-span-full text-center text-red-500">Erro ao carregar pautas.</p>';
     });
     showScreen('pautaSelection');
 }
 
-
-// Inicialização e Eventos Globais
-document.addEventListener('DOMContentLoaded', () => {
+const setupInitialApp = () => {
     try {
         const firebaseConfig = { apiKey: "AIzaSyCrLwXmkxgeVoB8TwRI7pplCVQETGK0zkE", authDomain: "pauta-ce162.firebaseapp.com", projectId: "pauta-ce162", storageBucket: "pauta-ce162.appspot.com", messagingSenderId: "87113750208", appId: "1:87113750208:web:4abba0024f4d4af699bf25" };
-        initializeApp(firebaseConfig);
-        db = getFirestore();
-        auth = getAuth();
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -297,8 +299,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     } catch(e) {
+         console.error("Firebase initialization error:", e);
          loadingContainer.innerHTML = '<p class="text-red-600">Erro fatal ao carregar a aplicação. Verifique a consola.</p>';
     }
+}
+
+// Inicialização e Eventos Globais
+document.addEventListener('DOMContentLoaded', () => {
+    setupInitialApp();
 
     // Event Delegation para toda a página
     document.body.addEventListener('click', async (e) => {
@@ -331,6 +339,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 startY: 30
             });
             docPDF.save(`relatorio_${currentPautaData.name.replace(/\s/g, '_')}.pdf`);
+            return;
+        }
+        
+        const pautaCard = button.closest('[data-pauta-id]');
+        if (pautaCard) {
+            if(button.classList.contains('delete-pauta-btn')) {
+                if (confirm(`Apagar a pauta "${pautaCard.dataset.pautaName}"?`)) deletePauta(pautaCard.dataset.pautaId);
+            } else {
+                loadPauta(pautaCard.dataset.pautaId, pautaCard.dataset.pautaName, pautaCard.dataset.pautaType);
+            }
             return;
         }
         
@@ -411,6 +429,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const password = e.target.elements['login-password'].value;
         try { await signInWithEmailAndPassword(auth, email, password); } 
         catch (error) { showNotification('Email ou senha inválidos.', 'error'); }
+    });
+
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = e.target.elements['register-name'].value;
+        const email = e.target.elements['register-email'].value;
+        const password = e.target.elements['register-password'].value;
+        if(password.length < 6) return showNotification('A senha deve ter no mínimo 6 caracteres.', 'error');
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            await setDoc(doc(db, "users", userCredential.user.uid), { name, email, uid: userCredential.user.uid, status: 'pending', role: 'user' });
+            showNotification('Conta criada! Aguardando aprovação.');
+            e.target.reset();
+            document.getElementById('login-tab-btn').click();
+        } catch(error) {
+            showNotification(error.code === 'auth/email-already-in-use' ? 'Este email já está em uso.' : 'Erro ao criar conta.', 'error');
+        }
     });
 });
 
